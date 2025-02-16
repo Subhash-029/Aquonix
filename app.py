@@ -9,7 +9,7 @@ from langchain_community.llms import HuggingFacePipeline
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer, pipeline
 import torch
 
-st.title("Custom PDF Chatbot")
+st.title("Aquonix")
 
 # Custom CSS for chat messages
 st.markdown("""
