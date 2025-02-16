@@ -1,7 +1,8 @@
 streamlit
-transformers 
-langchain 
-langchain-community
-accelerate 
-sentence-transformers 
+langchain
+sentence-transformers
 faiss-cpu
+transformers
+torch
+pypdf
+pdfminer.six
