@@ -6,3 +6,4 @@ transformers
 torch
 pypdf
 pdfminer.six
+langchain_community
