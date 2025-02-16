@@ -6,10 +6,14 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 from langchain.chains import RetrievalQA
 from langchain_community.llms import HuggingFacePipeline
-from transformers import AutoModelForSeq2SeqLM, AutoTokenizer, pipeline
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, pipeline
+from sentence_transformers import SentenceTransformer
 import torch
 
-st.title("Aquonix")
+# ✅ Load Embedding Model for SentenceTransformer
+model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+
+st.title("Ask Aquonix")
 
 # Custom CSS for chat messages
 st.markdown("""
@@ -49,7 +53,7 @@ def get_file_size(file):
     file.seek(0)
     return file_size
 
-# Add a sidebar for model selection and user details
+# Sidebar for model selection and user details
 st.sidebar.write("Settings")
 st.sidebar.write("-----------")
 model_options = ["MBZUAI/LaMini-T5-738M", "google/flan-t5-base", "google/flan-t5-small"]
@@ -60,47 +64,57 @@ st.sidebar.write("-----------")
 st.sidebar.write("About Me")
 st.sidebar.write("Name: Deepak Yadav")
 st.sidebar.write("Bio: Passionate about AI and machine learning. Enjoys working on innovative projects and sharing knowledge with the community.")
-st.sidebar.write("[GitHub](https://github.com/deepak7376)")
+st.sidebar.write("[GitHub](https://github.com/Subhash-029)")
 st.sidebar.write("[LinkedIn](https://www.linkedin.com/in/dky7376/)")
 st.sidebar.write("-----------")
 
 @st.cache_resource
-def initialize_qa_chain(filepath, CHECKPOINT):
-    loader = PDFMinerLoader(filepath)
-    documents = loader.load()
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=500)
-    splits = text_splitter.split_documents(documents)
+def initialize_qa_chain(filepath, model_name):
+    try:
+        loader = PDFMinerLoader(filepath)
+        documents = loader.load()
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=500)
+        splits = text_splitter.split_documents(documents)
 
-    # Create embeddings 
-    embeddings = SentenceTransformerEmbeddings(model_name="all-MiniLM-L6-v2")
-    vectordb = FAISS.from_documents(splits, embeddings)
+        # ✅ Create embeddings
+        embeddings = SentenceTransformerEmbeddings(model_name="all-MiniLM-L6-v2")
+        vectordb = FAISS.from_documents(splits, embeddings)
 
-    # Initialize model
-    TOKENIZER = AutoTokenizer.from_pretrained(CHECKPOINT)
-    BASE_MODEL = AutoModelForSeq2SeqLM.from_pretrained(CHECKPOINT, device_map=torch.device('cpu'), torch_dtype=torch.float32)
-    pipe = pipeline(
-        'text2text-generation',
-        model=BASE_MODEL,
-        tokenizer=TOKENIZER,
-        max_length=256,
-        do_sample=True,
-        temperature=0.3,
-        top_p=0.95,
-    )
+        # ✅ Load model with proper error handling
+        tokenizer = AutoTokenizer.from_pretrained(model_name)
+        model = AutoModelForSeq2SeqLM.from_pretrained(
+            model_name, 
+            device_map="auto",  # ✅ Auto-select device for efficiency
+            torch_dtype=torch.float32  # ✅ Reduce memory usage
+        )
 
-    llm = HuggingFacePipeline(pipeline=pipe)
+        text_gen_pipeline = pipeline(
+            "text2text-generation",
+            model=model,
+            tokenizer=tokenizer,
+            max_length=256,
+            do_sample=True,
+            temperature=0.3,
+            top_p=0.95,
+        )
 
-    # Build a QA chain
-    qa_chain = RetrievalQA.from_chain_type(
-        llm=llm,
-        chain_type="stuff",
-        retriever=vectordb.as_retriever(),
-    )
-    return qa_chain
+        llm = HuggingFacePipeline(pipeline=text_gen_pipeline)
+
+        # ✅ Build QA Chain
+        qa_chain = RetrievalQA.from_chain_type(
+            llm=llm,
+            chain_type="stuff",
+            retriever=vectordb.as_retriever(),
+        )
+        return qa_chain
+    except Exception as e:
+        st.error(f"Error initializing QA Chain: {str(e)}")
+        return None
 
 def process_answer(instruction, qa_chain):
-    generated_text = qa_chain.run(instruction)
-    return generated_text
+    if qa_chain:
+        return qa_chain.run(instruction)
+    return "Error: QA Chain is not initialized."
 
 if uploaded_file is not None:
     os.makedirs("docs", exist_ok=True)
@@ -109,7 +123,7 @@ if uploaded_file is not None:
         temp_file.write(uploaded_file.read())
         temp_filepath = temp_file.name
 
-    with st.spinner('Embeddings are in process...'):
+    with st.spinner('Processing document...'):
         qa_chain = initialize_qa_chain(temp_filepath, selected_model)
 else:
     qa_chain = None
@@ -127,20 +141,13 @@ for message in st.session_state.messages:
 
 # React to user input
 if prompt := st.chat_input("What is up?"):
-    # Display user message in chat message container
     st.markdown(f"<div class='user-message'>{prompt}</div>", unsafe_allow_html=True)
-    # Add user message to chat history
     st.session_state.messages.append({"role": "user", "content": prompt})
 
     if qa_chain:
-        # Generate response
         response = process_answer({'query': prompt}, qa_chain)
     else:
-        # Prompt to upload a file
         response = "Please upload a PDF file to enable the chatbot."
 
-    # Display assistant response in chat message container
     st.markdown(f"<div class='assistant-message'>{response}</div>", unsafe_allow_html=True)
-    
-    # Add assistant response to chat history
     st.session_state.messages.append({"role": "assistant", "content": response})
